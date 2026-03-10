@@ -758,6 +758,70 @@ function DeckTable({ cards, deckName, onBack, embedded = false }) {
   );
 }
 
+// ─── Compare View ─────────────────────────────────────────────────────────────
+
+function SummaryDiff({ cardsA, nameA, cardsB, nameB }) {
+  return <div style={{ color: "#475569", fontFamily: "'Courier New', monospace", padding: 20 }}>Summary diff coming soon…</div>;
+}
+
+function SideBySide({ cardsA, nameA, cardsB, nameB }) {
+  return <div style={{ color: "#475569", fontFamily: "'Courier New', monospace", padding: 20 }}>Side by side coming soon…</div>;
+}
+
+function CompareView({ cardsA, nameA, cardsB, nameB, onBack }) {
+  const [tab, setTab] = useState("diff"); // "diff" | "side"
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0d0f14", color: "#e2e8f0", fontFamily: "'Courier New', monospace" }}>
+      {/* Header */}
+      <div style={{ padding: "16px 20px 0", borderBottom: "1px solid #1e293b" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+          <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "#f1f5f9" }}>
+            {nameA.toUpperCase()}
+          </span>
+          <span style={{ fontSize: 12, color: "#475569" }}>vs</span>
+          <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "#f1f5f9" }}>
+            {nameB.toUpperCase()}
+          </span>
+          <button onClick={onBack}
+            style={{ marginLeft: "auto", background: "transparent", color: "#334155", border: "1px solid #1e293b", padding: "2px 10px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontFamily: "inherit", letterSpacing: "0.06em" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#94a3b8"}
+            onMouseLeave={e => e.currentTarget.style.color = "#334155"}>
+            ← NEW COMPARISON
+          </button>
+        </div>
+
+        <div style={{ height: 2, background: "linear-gradient(90deg,#4ade80,#818cf8,#fb923c,#f472b6)", marginBottom: 0 }} />
+
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: "1px solid #1e293b" }}>
+          {[["diff", "SUMMARY DIFF"], ["side", "SIDE BY SIDE"]].map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              style={{
+                background: "transparent", border: "none",
+                borderBottom: `2px solid ${tab === key ? "#f1f5f9" : "transparent"}`,
+                color: tab === key ? "#f1f5f9" : "#475569",
+                padding: "8px 16px 10px", cursor: "pointer", fontSize: 10,
+                fontFamily: "inherit", fontWeight: tab === key ? 700 : 400,
+                letterSpacing: "0.06em", marginBottom: -1, transition: "all 0.15s",
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content */}
+      <div style={{ padding: tab === "side" ? 0 : 24 }}>
+        {tab === "diff"
+          ? <SummaryDiff cardsA={cardsA} nameA={nameA} cardsB={cardsB} nameB={nameB} />
+          : <SideBySide cardsA={cardsA} nameA={nameA} cardsB={cardsB} nameB={nameB} />
+        }
+      </div>
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -786,7 +850,13 @@ export default function App() {
     );
   }
   if (screen === "compare") {
-    return <div style={{ color: "#f1f5f9", padding: 40, fontFamily: "'Courier New', monospace" }}>Compare view coming soon… ({compareData?.nameA} vs {compareData?.nameB})</div>;
+    return (
+      <CompareView
+        cardsA={compareData.cardsA} nameA={compareData.nameA}
+        cardsB={compareData.cardsB} nameB={compareData.nameB}
+        onBack={() => setScreen("compare-load")}
+      />
+    );
   }
   return <DeckTable cards={cards} deckName={deckName} onBack={() => setScreen("load")} />;
 }
