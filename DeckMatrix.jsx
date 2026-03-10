@@ -149,6 +149,17 @@ function processApiData(data) {
   return result;
 }
 
+function extractDeckMeta(data) {
+  const ratings = data.details?.powerLevel?.ratings || {};
+  const brackets = data.details?.brackets || {};
+  return {
+    powerLevel: Math.round((ratings.overall ?? data.powerLevelRating ?? 0) * 10) / 10,
+    csBracket: brackets.displayBracket ?? null,
+    wotcBracket: brackets.wotcBracket ?? null,
+    fringeCEDH: ratings.fringeCEDH ?? false,
+  };
+}
+
 function extractDeckId(input) {
   const trimmed = input.trim();
   // Raw 32-char hex ID
@@ -343,8 +354,8 @@ function CompareLoadScreen({ onLoad, onBack }) {
     if (resA.status === "fulfilled" && resB.status === "fulfilled") {
       const dataA = resA.value, dataB = resB.value;
       onLoad(
-        processApiData(dataA), dataA.name || inputA.trim(),
-        processApiData(dataB), dataB.name || inputB.trim(),
+        processApiData(dataA), dataA.name || inputA.trim(), extractDeckMeta(dataA),
+        processApiData(dataB), dataB.name || inputB.trim(), extractDeckMeta(dataB),
       );
     }
   };
@@ -447,14 +458,14 @@ function LoadScreen({ onLoad, onCompareMode }) {
       setError("All fetch attempts failed. Try the JSON paste method below — export the deck JSON from CommanderSalt and paste it here.");
       return;
     }
-    onLoad(processApiData(data), data.name || id);
+    onLoad(processApiData(data), data.name || id, extractDeckMeta(data));
   };
 
   const handleJsonLoad = () => {
     try {
       const data = JSON.parse(jsonInput.trim());
       if (!data.cards) throw new Error("Missing cards data — make sure you're pasting the full CommanderSalt deck JSON.");
-      onLoad(processApiData(data), data.name || "Deck");
+      onLoad(processApiData(data), data.name || "Deck", extractDeckMeta(data));
     } catch (e) {
       setError(e.message.startsWith("Missing") ? e.message : "Invalid JSON — make sure you pasted the complete response.");
     }
@@ -531,9 +542,32 @@ function LoadScreen({ onLoad, onCompareMode }) {
   );
 }
 
+// ─── Meta Badges ──────────────────────────────────────────────────────────────
+
+function MetaBadges({ meta }) {
+  if (!meta) return null;
+  const plColor = meta.powerLevel >= 9 ? "#fbbf24" : meta.powerLevel >= 7 ? "#a78bfa" : meta.powerLevel >= 5 ? "#fb923c" : "#64748b";
+  const plBg   = meta.powerLevel >= 9 ? "#2d1f00" : meta.powerLevel >= 7 ? "#1e1040" : meta.powerLevel >= 5 ? "#431407" : "#0f172a";
+  const csColor = meta.csBracket >= 5 ? "#f87171" : meta.csBracket >= 4 ? "#fb923c" : meta.csBracket >= 3 ? "#fbbf24" : "#4ade80";
+  const csBg    = meta.csBracket >= 5 ? "#2d0a0a" : meta.csBracket >= 4 ? "#2d1000" : meta.csBracket >= 3 ? "#2d1f00" : "#052e16";
+  const badge = (label, color, bg) => (
+    <span style={{ borderRadius: 4, display: "inline-flex", alignItems: "center", padding: "2px 8px", background: bg, color, border: `1.5px solid ${color}`, fontSize: 10, fontWeight: 700, letterSpacing: "0.06em" }}>
+      {label}
+    </span>
+  );
+  return (
+    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+      {meta.powerLevel > 0 && badge(`PL ${meta.powerLevel.toFixed(1)}`, plColor, plBg)}
+      {meta.csBracket != null && badge(`CS B${meta.csBracket}`, csColor, csBg)}
+      {meta.wotcBracket != null && badge(`WotC B${meta.wotcBracket}`, "#94a3b8", "#0f172a")}
+      {meta.fringeCEDH && badge("FRINGE cEDH", "#e879f9", "#2d0a2d")}
+    </div>
+  );
+}
+
 // ─── Deck Table ───────────────────────────────────────────────────────────────
 
-function DeckTable({ cards, deckName, onBack, embedded = false }) {
+function DeckTable({ cards, deckName, deckMeta, onBack, embedded = false }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState(null);
   const [sortCol, setSortCol] = useState("grand_total");
@@ -627,6 +661,8 @@ function DeckTable({ cards, deckName, onBack, embedded = false }) {
             </button>
           )}
         </div>
+
+        {deckMeta && <div style={{ marginBottom: 10 }}><MetaBadges meta={deckMeta} /></div>}
 
         {/* Summary bar */}
         <div style={{ display:"flex", gap:16, marginBottom:10, flexWrap:"wrap" }}>
@@ -932,33 +968,105 @@ function SummaryDiff({ cardsA, nameA, cardsB, nameB }) {
 }
 
 function SideBySide({ cardsA, nameA, cardsB, nameB }) {
+  const idsB = new Set(cardsB.map(c => c.id));
+  const idsA = new Set(cardsA.map(c => c.id));
+  const uniqueA = cardsA.filter(c => !idsB.has(c.id));
+  const uniqueB = cardsB.filter(c => !idsA.has(c.id));
+
   return (
     <div style={{ display: "flex", minHeight: "calc(100vh - 110px)" }}>
       <div style={{ flex: 1, borderRight: "2px solid #1e293b", overflow: "auto" }}>
-        <DeckTable cards={cardsA} deckName={nameA} onBack={null} embedded />
+        <DeckTable cards={uniqueA} deckName={nameA} onBack={null} embedded />
       </div>
       <div style={{ flex: 1, overflow: "auto" }}>
-        <DeckTable cards={cardsB} deckName={nameB} onBack={null} embedded />
+        <DeckTable cards={uniqueB} deckName={nameB} onBack={null} embedded />
       </div>
     </div>
   );
 }
 
-function CompareView({ cardsA, nameA, cardsB, nameB, onBack }) {
+const FLAG_MIN_BRACKET = { GC: 3, MLD: 4, ET: 4, COMBO: 4 };
+
+function computeUpgrades(weakCards, weakMeta, strongCards) {
+  const weakIds = new Set(weakCards.map(c => c.id));
+  const weakBracket = weakMeta?.wotcBracket ?? 4;
+
+  function dominantCat(card) {
+    let best = null, bestScore = -1;
+    for (const cat of Object.keys(CAT_CONFIG)) {
+      const s = card.scores[cat]?.score || 0;
+      if (s > bestScore) { bestScore = s; best = cat; }
+    }
+    return best;
+  }
+
+  function bracketSafe(card) {
+    for (const flag of card.bracket_flags || []) {
+      const minBracket = FLAG_MIN_BRACKET[flag] ?? 0;
+      if (minBracket > weakBracket) return false;
+    }
+    return true;
+  }
+
+  const grandTotal = c => c.power_total + c.synergy + c.bias + c.manabase;
+
+  const results = {};
+
+  for (const cat of Object.keys(CAT_CONFIG)) {
+    const candidates = strongCards
+      .filter(c => !weakIds.has(c.id) && dominantCat(c) === cat && bracketSafe(c))
+      .sort((a, b) => (b.scores[cat]?.score || 0) - (a.scores[cat]?.score || 0));
+
+    const cuts = weakCards
+      .filter(c => !c.isCommander && dominantCat(c) === cat)
+      .sort((a, b) => grandTotal(a) - grandTotal(b));
+
+    const swaps = [];
+    const usedCuts = new Set();
+
+    for (const candidate of candidates) {
+      if (swaps.length >= 5) break;
+      const cut = cuts.find(c => !usedCuts.has(c.id));
+      if (!cut) break;
+      const netGain = candidate.power_total - cut.power_total;
+      if (netGain <= 0) continue;
+      usedCuts.add(cut.id);
+      swaps.push({
+        cardIn: candidate,
+        cardOut: cut,
+        catScore: Math.round((candidate.scores[cat]?.score || 0) * 10) / 10,
+        cutScore: Math.round((cut.scores[cat]?.score || 0) * 10) / 10,
+        netGain: Math.round(netGain * 10) / 10,
+      });
+    }
+
+    if (swaps.length > 0) results[cat] = swaps;
+  }
+
+  return results;
+}
+
+function UpgradesTab({ cardsA, metaA, cardsB, metaB }) {
+  return <div style={{ color: "#475569", fontFamily: "'Courier New', monospace", padding: 20 }}>Upgrades coming soon…</div>;
+}
+
+function CompareView({ cardsA, nameA, metaA, cardsB, nameB, metaB, onBack }) {
   const [tab, setTab] = useState("diff"); // "diff" | "side"
 
   return (
     <div style={{ minHeight: "100vh", background: "#0d0f14", color: "#e2e8f0", fontFamily: "'Courier New', monospace" }}>
       {/* Header */}
       <div style={{ padding: "16px 20px 0", borderBottom: "1px solid #1e293b" }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "#f1f5f9" }}>
-            {nameA.toUpperCase()}
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "#f1f5f9" }}>{nameA.toUpperCase()}</span>
+            <MetaBadges meta={metaA} />
+          </div>
           <span style={{ fontSize: 12, color: "#475569" }}>vs</span>
-          <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "#f1f5f9" }}>
-            {nameB.toUpperCase()}
-          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.06em", color: "#f1f5f9" }}>{nameB.toUpperCase()}</span>
+            <MetaBadges meta={metaB} />
+          </div>
           <button onClick={onBack}
             style={{ marginLeft: "auto", background: "transparent", color: "#334155", border: "1px solid #1e293b", padding: "2px 10px", borderRadius: 4, cursor: "pointer", fontSize: 10, fontFamily: "inherit", letterSpacing: "0.06em" }}
             onMouseEnter={e => e.currentTarget.style.color = "#94a3b8"}
@@ -1004,12 +1112,13 @@ export default function App() {
   const [screen, setScreen] = useState("load"); // "load" | "deck" | "compare-load" | "compare"
   const [cards, setCards] = useState(null);
   const [deckName, setDeckName] = useState("");
-  const [compareData, setCompareData] = useState(null); // { cardsA, nameA, cardsB, nameB }
+  const [deckMeta, setDeckMeta] = useState(null);
+  const [compareData, setCompareData] = useState(null); // { cardsA, nameA, metaA, cardsB, nameB, metaB }
 
   if (screen === "load") {
     return (
       <LoadScreen
-        onLoad={(c, name) => { setCards(c); setDeckName(name); setScreen("deck"); }}
+        onLoad={(c, name, meta) => { setCards(c); setDeckName(name); setDeckMeta(meta); setScreen("deck"); }}
         onCompareMode={() => setScreen("compare-load")}
       />
     );
@@ -1017,8 +1126,8 @@ export default function App() {
   if (screen === "compare-load") {
     return (
       <CompareLoadScreen
-        onLoad={(cA, nA, cB, nB) => {
-          setCompareData({ cardsA: cA, nameA: nA, cardsB: cB, nameB: nB });
+        onLoad={(cA, nA, mA, cB, nB, mB) => {
+          setCompareData({ cardsA: cA, nameA: nA, metaA: mA, cardsB: cB, nameB: nB, metaB: mB });
           setScreen("compare");
         }}
         onBack={() => setScreen("load")}
@@ -1028,11 +1137,11 @@ export default function App() {
   if (screen === "compare") {
     return (
       <CompareView
-        cardsA={compareData.cardsA} nameA={compareData.nameA}
-        cardsB={compareData.cardsB} nameB={compareData.nameB}
+        cardsA={compareData.cardsA} nameA={compareData.nameA} metaA={compareData.metaA}
+        cardsB={compareData.cardsB} nameB={compareData.nameB} metaB={compareData.metaB}
         onBack={() => setScreen("compare-load")}
       />
     );
   }
-  return <DeckTable cards={cards} deckName={deckName} onBack={() => setScreen("load")} />;
+  return <DeckTable cards={cards} deckName={deckName} deckMeta={deckMeta} onBack={() => setScreen("load")} />;
 }
