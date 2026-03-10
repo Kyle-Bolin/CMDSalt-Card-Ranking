@@ -295,7 +295,7 @@ function BracketFlags({ flags }) {
 
 // ─── Load Screen ──────────────────────────────────────────────────────────────
 
-function LoadScreen({ onLoad }) {
+function LoadScreen({ onLoad, onCompareMode }) {
   const [input, setInput] = useState("");
   const [jsonInput, setJsonInput] = useState("");
   const [mode, setMode] = useState("url"); // "url" | "json"
@@ -358,6 +358,20 @@ function LoadScreen({ onLoad }) {
       <div style={{ width:520, padding:40 }}>
         <div style={{ fontSize:22, fontWeight:700, color:"#f1f5f9", letterSpacing:"0.06em", marginBottom:6 }}>DECK MATRIX</div>
         <div style={{ height:2, background:"linear-gradient(90deg,#4ade80,#818cf8,#fb923c,#f472b6)", marginBottom:24 }} />
+
+        {/* Screen mode toggle */}
+        <div style={{ display:"flex", gap:8, marginBottom:24 }}>
+          <button
+            style={{ flex:1, padding:"8px", borderRadius:4, cursor:"pointer", background:"#f1f5f9", color:"#0d1117", border:"1px solid #f1f5f9", fontSize:10, fontFamily:"inherit", fontWeight:700, letterSpacing:"0.08em" }}>
+            SINGLE DECK
+          </button>
+          <button onClick={onCompareMode}
+            style={{ flex:1, padding:"8px", borderRadius:4, cursor:"pointer", background:"transparent", color:"#475569", border:"1px solid #1e293b", fontSize:10, fontFamily:"inherit", fontWeight:400, letterSpacing:"0.08em", transition:"all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.color="#f1f5f9"; e.currentTarget.style.borderColor="#475569"; }}
+            onMouseLeave={e => { e.currentTarget.style.color="#475569"; e.currentTarget.style.borderColor="#1e293b"; }}>
+            COMPARE DECKS
+          </button>
+        </div>
 
         {/* Mode tabs */}
         <div style={{ display:"flex", gap:0, marginBottom:20, borderBottom:"1px solid #1e293b" }}>
@@ -640,7 +654,7 @@ function DeckTable({ cards, deckName, onBack, embedded = false }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] = useState("load"); // "load" | "deck"
+  const [screen, setScreen] = useState("load"); // "load" | "deck" | "compare-load" | "compare"
   const [cards, setCards] = useState(null);
   const [deckName, setDeckName] = useState("");
 
