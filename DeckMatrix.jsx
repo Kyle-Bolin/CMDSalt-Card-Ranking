@@ -1047,7 +1047,90 @@ function computeUpgrades(weakCards, weakMeta, strongCards) {
 }
 
 function UpgradesTab({ cardsA, metaA, cardsB, metaB }) {
-  return <div style={{ color: "#475569", fontFamily: "'Courier New', monospace", padding: 20 }}>Upgrades coming soon…</div>;
+  const grandTotalA = cardsA.reduce((s, c) => s + c.power_total + c.synergy + c.bias + c.manabase, 0);
+  const grandTotalB = cardsB.reduce((s, c) => s + c.power_total + c.synergy + c.bias + c.manabase, 0);
+
+  // Determine which deck is weaker
+  const BALANCE_THRESHOLD = 5;
+  const balanced = Math.abs(grandTotalA - grandTotalB) <= BALANCE_THRESHOLD;
+  const weakIsA = grandTotalA <= grandTotalB;
+  const weakCards = weakIsA ? cardsA : cardsB;
+  const weakMeta  = weakIsA ? metaA  : metaB;
+  const weakName  = weakIsA ? "DECK A" : "DECK B";
+  const strongCards = weakIsA ? cardsB : cardsA;
+
+  if (balanced) {
+    return (
+      <div style={{ color: "#4ade80", fontFamily: "'Courier New', monospace", padding: 20, fontSize: 12 }}>
+        ✓ Decks are already balanced — grand totals within {BALANCE_THRESHOLD} points.
+      </div>
+    );
+  }
+
+  const upgrades = computeUpgrades(weakCards, weakMeta, strongCards);
+  const hasAny = Object.keys(upgrades).length > 0;
+
+  return (
+    <div style={{ maxWidth: 860 }}>
+      {/* Header */}
+      <div style={{ marginBottom: 20, padding: "10px 16px", background: "#090b10", borderRadius: 6, border: "1px solid #1e293b", fontSize: 11, color: "#94a3b8" }}>
+        Suggesting upgrades for{" "}
+        <span style={{ color: "#f1f5f9", fontWeight: 700 }}>{weakName}</span>
+        {" "}— lower grand total ({Math.round(weakIsA ? grandTotalA : grandTotalB)} vs {Math.round(weakIsA ? grandTotalB : grandTotalA)})
+        {weakMeta?.wotcBracket != null && (
+          <span style={{ marginLeft: 8, color: "#475569" }}>· staying within WotC B{weakMeta.wotcBracket}</span>
+        )}
+      </div>
+
+      {!hasAny && (
+        <div style={{ color: "#475569", fontSize: 12 }}>No beneficial category-matched swaps found within bracket constraints.</div>
+      )}
+
+      {/* Category sections */}
+      {Object.entries(CAT_CONFIG).map(([cat, cfg]) => {
+        const swaps = upgrades[cat];
+        if (!swaps?.length) return null;
+        return (
+          <div key={cat} style={{ marginBottom: 16, borderRadius: 6, overflow: "hidden", border: `1px solid ${cfg.color}33` }}>
+            {/* Category header */}
+            <div style={{ padding: "10px 16px", background: cfg.bg, fontSize: 10, fontWeight: 700, color: cfg.color, letterSpacing: "0.08em" }}>
+              {cfg.label.toUpperCase()} — {swaps.length} SWAP{swaps.length > 1 ? "S" : ""}
+            </div>
+
+            {/* Swap rows */}
+            {swaps.map((swap, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", background: i % 2 === 0 ? "#0d0f14" : "#090b10", borderTop: "1px solid #0f1520" }}>
+                {/* Card in */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#f1f5f9", fontWeight: 700, marginBottom: 2 }}>{swap.cardIn.name}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 10, color: cfg.color, fontWeight: 700 }}>{swap.catScore}</span>
+                    {(swap.cardIn.bracket_flags || []).map(f => {
+                      const fc = FLAG_CONFIG[f]; return fc ? (
+                        <span key={f} title={fc.title} style={{ borderRadius: 3, fontSize: 8, fontWeight: 700, padding: "1px 4px", background: fc.bg, color: fc.color, border: `1px solid ${fc.color}` }}>{fc.label}</span>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+
+                {/* Arrow + delta */}
+                <div style={{ textAlign: "center", minWidth: 80 }}>
+                  <div style={{ fontSize: 10, color: "#334155", marginBottom: 2 }}>replaces</div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#4ade80" }}>▲ +{swap.netGain.toFixed(1)}</span>
+                </div>
+
+                {/* Card out */}
+                <div style={{ flex: 1, textAlign: "right" }}>
+                  <div style={{ fontSize: 11, color: "#64748b", marginBottom: 2 }}>{swap.cardOut.name}</div>
+                  <span style={{ fontSize: 10, color: "#334155" }}>{swap.cutScore > 0 ? swap.cutScore.toFixed(1) : "—"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function CompareView({ cardsA, nameA, metaA, cardsB, nameB, metaB, onBack }) {
