@@ -1036,7 +1036,7 @@ function computeUpgrades(weakCards, weakMeta, strongCards) {
         cardOut: cut,
         catScore: Math.round((candidate.scores[cat]?.score || 0) * 10) / 10,
         cutScore: Math.round((cut.scores[cat]?.score || 0) * 10) / 10,
-        netGain: Math.round((grandTotal(candidate) - grandTotal(cut)) * 10) / 10,
+        netGain: Math.round(netGain * 10) / 10,
       });
     }
 
