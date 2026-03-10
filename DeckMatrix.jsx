@@ -760,8 +760,175 @@ function DeckTable({ cards, deckName, onBack, embedded = false }) {
 
 // ─── Compare View ─────────────────────────────────────────────────────────────
 
+function computeDeckTotals(cards) {
+  const catTotals = {};
+  for (const cat of Object.keys(CAT_CONFIG)) {
+    catTotals[cat] = Math.round(cards.reduce((s, c) => s + (c.scores[cat]?.score || 0), 0) * 10) / 10;
+  }
+  const grandTotal = Math.round(cards.reduce((s, c) => s + c.power_total + c.synergy + c.bias + c.manabase, 0) * 10) / 10;
+  const synergy = Math.round(cards.reduce((s, c) => s + c.synergy, 0) * 10) / 10;
+
+  const subTotals = {};
+  for (const card of cards) {
+    for (const [cat, catData] of Object.entries(card.scores)) {
+      for (const entry of catData.subs || []) {
+        const key = entry.combo ? `${cat}::combo::${entry.combo}` : `${cat}::${entry.sub}`;
+        if (!subTotals[key]) subTotals[key] = { cat, sub: entry.sub, combo: entry.combo || null, score: 0, count: 0 };
+        subTotals[key].score += entry.score;
+        subTotals[key].count += 1;
+      }
+    }
+  }
+
+  const flags = [...new Set(cards.flatMap(c => c.bracket_flags || []))].sort();
+  return { catTotals, grandTotal, synergy, subTotals, flags };
+}
+
 function SummaryDiff({ cardsA, nameA, cardsB, nameB }) {
-  return <div style={{ color: "#475569", fontFamily: "'Courier New', monospace", padding: 20 }}>Summary diff coming soon…</div>;
+  const totA = computeDeckTotals(cardsA);
+  const totB = computeDeckTotals(cardsB);
+  const maxGrand = Math.max(totA.grandTotal, totB.grandTotal, 1);
+
+  const Delta = ({ a, b, decimals = 0 }) => {
+    const d = Math.round((a - b) * Math.pow(10, decimals)) / Math.pow(10, decimals);
+    if (d === 0) return <span style={{ color: "#334155", fontSize: 11 }}>—</span>;
+    return (
+      <span style={{ fontSize: 11, fontWeight: 700, color: d > 0 ? "#4ade80" : "#f87171" }}>
+        {d > 0 ? "▲" : "▼"} {Math.abs(d).toFixed(decimals)}
+      </span>
+    );
+  };
+
+  const ScoreBar = ({ val, max, color }) => {
+    const pct = max > 0 ? Math.min(100, (val / max) * 100) : 0;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 160 }}>
+        <div style={{ flex: 1, height: 6, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 3 }} />
+        </div>
+        <span style={{ color, fontWeight: 700, fontSize: 12, minWidth: 40, textAlign: "right" }}>{val}</span>
+      </div>
+    );
+  };
+
+  const allSubKeys = [...new Set([...Object.keys(totA.subTotals), ...Object.keys(totB.subTotals)])];
+
+  return (
+    <div style={{ maxWidth: 900 }}>
+
+      {/* Grand total */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, padding: "16px 20px", background: "#090b10", borderRadius: 6, border: "1px solid #1e293b" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: "#fbbf24", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 4 }}>{nameA.toUpperCase()}</div>
+          <ScoreBar val={totA.grandTotal} max={maxGrand} color="#fbbf24" />
+        </div>
+        <div style={{ textAlign: "center", minWidth: 100 }}>
+          <div style={{ fontSize: 10, color: "#475569", letterSpacing: "0.06em", marginBottom: 4 }}>GRAND TOTAL</div>
+          <Delta a={totA.grandTotal} b={totB.grandTotal} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, color: "#fbbf24", fontWeight: 700, letterSpacing: "0.08em", marginBottom: 4, textAlign: "right" }}>{nameB.toUpperCase()}</div>
+          <ScoreBar val={totB.grandTotal} max={maxGrand} color="#fbbf24" />
+        </div>
+      </div>
+
+      {/* Synergy */}
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, padding: "12px 20px", background: "#090b10", borderRadius: 6, border: "1px solid #1e293b" }}>
+        <span style={{ flex: 1, fontWeight: 700, color: "#38bdf8", fontSize: 12 }}>{totA.synergy.toFixed(1)}</span>
+        <div style={{ minWidth: 100, textAlign: "center" }}>
+          <div style={{ fontSize: 10, color: "#38bdf8", letterSpacing: "0.06em", marginBottom: 2 }}>SYNERGY</div>
+          <Delta a={totA.synergy} b={totB.synergy} decimals={1} />
+        </div>
+        <div style={{ flex: 1, textAlign: "right", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8 }}>
+          <Delta a={totB.synergy} b={totA.synergy} decimals={1} />
+          <span style={{ fontWeight: 700, color: "#38bdf8", fontSize: 12 }}>{totB.synergy.toFixed(1)}</span>
+        </div>
+      </div>
+
+      {/* Bracket flags */}
+      {(totA.flags.length > 0 || totB.flags.length > 0) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16, padding: "12px 20px", background: "#090b10", borderRadius: 6, border: "1px solid #1e293b" }}>
+          <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {totA.flags.length > 0
+              ? totA.flags.map(f => { const cfg = FLAG_CONFIG[f] || { label: f, color: "#94a3b8", bg: "#0f172a" }; return <span key={f} title={cfg.title} style={{ borderRadius: 3, fontSize: 9, fontWeight: 700, padding: "1px 5px", background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}` }}>{cfg.label}</span>; })
+              : <span style={{ color: "#1e293b", fontSize: 11 }}>none</span>}
+          </div>
+          <span style={{ minWidth: 100, textAlign: "center", fontSize: 10, color: "#e879f9", letterSpacing: "0.06em" }}>FLAGS</span>
+          <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {totB.flags.length > 0
+              ? totB.flags.map(f => { const cfg = FLAG_CONFIG[f] || { label: f, color: "#94a3b8", bg: "#0f172a" }; return <span key={f} title={cfg.title} style={{ borderRadius: 3, fontSize: 9, fontWeight: 700, padding: "1px 5px", background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.color}` }}>{cfg.label}</span>; })
+              : <span style={{ color: "#1e293b", fontSize: 11 }}>none</span>}
+          </div>
+        </div>
+      )}
+
+      {/* Category blocks */}
+      {Object.entries(CAT_CONFIG).map(([cat, cfg]) => {
+        const maxCat = Math.max(totA.catTotals[cat], totB.catTotals[cat], 1);
+        const catSubKeys = allSubKeys.filter(k => k.startsWith(`${cat}::`));
+        const maxSub = Math.max(...catSubKeys.map(k => Math.max(totA.subTotals[k]?.score || 0, totB.subTotals[k]?.score || 0)), 1);
+
+        return (
+          <div key={cat} style={{ marginBottom: 12, borderRadius: 6, overflow: "hidden", border: `1px solid ${cfg.color}33` }}>
+            {/* Category header row */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "12px 20px", background: cfg.bg }}>
+              <div style={{ flex: 1 }}>
+                <ScoreBar val={totA.catTotals[cat]} max={maxCat} color={cfg.color} />
+              </div>
+              <div style={{ textAlign: "center", minWidth: 140 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: cfg.color, letterSpacing: "0.08em" }}>{cfg.label.toUpperCase()}</div>
+                <div style={{ marginTop: 2 }}><Delta a={totA.catTotals[cat]} b={totB.catTotals[cat]} decimals={1} /></div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <ScoreBar val={totB.catTotals[cat]} max={maxCat} color={cfg.color} />
+              </div>
+            </div>
+
+            {/* Sub-category rows */}
+            {catSubKeys.map((k, i) => {
+              const sA = totA.subTotals[k];
+              const sB = totB.subTotals[k];
+              const scoreA = Math.round((sA?.score || 0) * 10) / 10;
+              const scoreB = Math.round((sB?.score || 0) * 10) / 10;
+              const countA = sA?.count || 0;
+              const countB = sB?.count || 0;
+              const meta = sA || sB;
+              const label = meta.combo ? `↳ ${formatComboLabel(meta.combo)}` : subLabel(meta.sub);
+              const pctA = maxSub > 0 ? Math.min(100, (scoreA / maxSub) * 100) : 0;
+              const pctB = maxSub > 0 ? Math.min(100, (scoreB / maxSub) * 100) : 0;
+
+              return (
+                <div key={k} style={{ display: "flex", alignItems: "center", gap: 16, padding: "6px 20px 6px 32px", background: i % 2 === 0 ? "#0d0f14" : "#090b10", borderTop: "1px solid #0f1520" }}>
+                  {/* Deck A */}
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: `${pctA}%`, height: "100%", background: scoreA > 0 ? cfg.color : "transparent", borderRadius: 2 }} />
+                    </div>
+                    <span style={{ color: scoreA > 0 ? cfg.text : "#1e293b", fontSize: 10, minWidth: 70, textAlign: "right" }}>
+                      {scoreA > 0 ? `${scoreA} (${countA})` : "—"}
+                    </span>
+                  </div>
+                  {/* Label */}
+                  <div style={{ minWidth: 140, textAlign: "center", fontSize: 10, color: meta.combo ? "#475569" : "#64748b", fontStyle: meta.combo ? "italic" : "normal", letterSpacing: "0.04em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {label}
+                  </div>
+                  {/* Deck B */}
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, flexDirection: "row-reverse" }}>
+                    <div style={{ flex: 1, height: 4, background: "#1e293b", borderRadius: 2, overflow: "hidden" }}>
+                      <div style={{ width: `${pctB}%`, height: "100%", background: scoreB > 0 ? cfg.color : "transparent", borderRadius: 2 }} />
+                    </div>
+                    <span style={{ color: scoreB > 0 ? cfg.text : "#1e293b", fontSize: 10, minWidth: 70, textAlign: "left" }}>
+                      {scoreB > 0 ? `${scoreB} (${countB})` : "—"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function SideBySide({ cardsA, nameA, cardsB, nameB }) {
