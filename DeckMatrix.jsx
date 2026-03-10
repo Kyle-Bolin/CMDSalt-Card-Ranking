@@ -989,15 +989,15 @@ const FLAG_MIN_BRACKET = { GC: 3, MLD: 4, ET: 4, COMBO: 4 };
 
 function computeUpgrades(weakCards, weakMeta, strongCards) {
   const weakIds = new Set(weakCards.map(c => c.id));
-  const weakBracket = weakMeta?.wotcBracket ?? 4;
+  const weakBracket = weakMeta?.wotcBracket ?? 1;
 
   function dominantCat(card) {
-    let best = null, bestScore = -1;
+    let best = null, bestScore = 0;
     for (const cat of Object.keys(CAT_CONFIG)) {
       const s = card.scores[cat]?.score || 0;
       if (s > bestScore) { bestScore = s; best = cat; }
     }
-    return best;
+    return best; // null if all scores are 0
   }
 
   function bracketSafe(card) {
@@ -1028,7 +1028,7 @@ function computeUpgrades(weakCards, weakMeta, strongCards) {
       if (swaps.length >= 5) break;
       const cut = cuts.find(c => !usedCuts.has(c.id));
       if (!cut) break;
-      const netGain = candidate.power_total - cut.power_total;
+      const netGain = grandTotal(candidate) - grandTotal(cut);
       if (netGain <= 0) continue;
       usedCuts.add(cut.id);
       swaps.push({
@@ -1036,7 +1036,7 @@ function computeUpgrades(weakCards, weakMeta, strongCards) {
         cardOut: cut,
         catScore: Math.round((candidate.scores[cat]?.score || 0) * 10) / 10,
         cutScore: Math.round((cut.scores[cat]?.score || 0) * 10) / 10,
-        netGain: Math.round(netGain * 10) / 10,
+        netGain: Math.round((grandTotal(candidate) - grandTotal(cut)) * 10) / 10,
       });
     }
 
