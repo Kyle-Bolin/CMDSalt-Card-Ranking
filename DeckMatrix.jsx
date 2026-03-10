@@ -1051,7 +1051,7 @@ function UpgradesTab({ cardsA, metaA, cardsB, metaB }) {
 }
 
 function CompareView({ cardsA, nameA, metaA, cardsB, nameB, metaB, onBack }) {
-  const [tab, setTab] = useState("diff"); // "diff" | "side"
+  const [tab, setTab] = useState("diff"); // "diff" | "side" | "upgrades"
 
   return (
     <div style={{ minHeight: "100vh", background: "#0d0f14", color: "#e2e8f0", fontFamily: "'Courier New', monospace" }}>
@@ -1079,7 +1079,7 @@ function CompareView({ cardsA, nameA, metaA, cardsB, nameB, metaB, onBack }) {
 
         {/* Tabs */}
         <div style={{ display: "flex", borderBottom: "1px solid #1e293b" }}>
-          {[["diff", "SUMMARY DIFF"], ["side", "SIDE BY SIDE"]].map(([key, label]) => (
+          {[["diff", "SUMMARY DIFF"], ["side", "SIDE BY SIDE"], ["upgrades", "UPGRADES"]].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
               style={{
                 background: "transparent", border: "none",
@@ -1096,11 +1096,10 @@ function CompareView({ cardsA, nameA, metaA, cardsB, nameB, metaB, onBack }) {
       </div>
 
       {/* Tab content */}
-      <div style={{ padding: tab === "side" ? 0 : 24 }}>
-        {tab === "diff"
-          ? <SummaryDiff cardsA={cardsA} nameA={nameA} cardsB={cardsB} nameB={nameB} />
-          : <SideBySide cardsA={cardsA} nameA={nameA} cardsB={cardsB} nameB={nameB} />
-        }
+      <div style={{ padding: (tab === "side" || tab === "upgrades") ? 0 : 24 }}>
+        {tab === "diff" && <SummaryDiff cardsA={cardsA} nameA={nameA} cardsB={cardsB} nameB={nameB} />}
+        {tab === "side" && <SideBySide cardsA={cardsA} nameA={nameA} cardsB={cardsB} nameB={nameB} />}
+        {tab === "upgrades" && <UpgradesTab cardsA={cardsA} metaA={metaA} cardsB={cardsB} metaB={metaB} />}
       </div>
     </div>
   );
