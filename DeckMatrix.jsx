@@ -410,19 +410,15 @@ function LoadScreen({ onLoad }) {
   );
 }
 
-// ─── Main App ─────────────────────────────────────────────────────────────────
+// ─── Deck Table ───────────────────────────────────────────────────────────────
 
-export default function App() {
-  const [cards, setCards] = useState(null);
-  const [deckName, setDeckName] = useState("");
+function DeckTable({ cards, deckName, onBack, embedded = false }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState(null);
   const [sortCol, setSortCol] = useState("grand_total");
   const [sortDir, setSortDir] = useState(-1);
   const [hoveredCard, setHoveredCard] = useState(null);
   const [tooltip, setTooltip] = useState({ x: 0, y: 0 });
-
-  if (!cards) return <LoadScreen onLoad={(c, name) => { setCards(c); setDeckName(name); }} />;
 
   const maxScores = {};
   for (const cat of Object.keys(CAT_CONFIG)) {
@@ -498,15 +494,17 @@ export default function App() {
       )}
 
       {/* Header */}
-      <div style={{ padding:"16px 20px 0", borderBottom:"1px solid #1e293b" }}>
+      <div style={{ padding: embedded ? "10px 12px 0" : "16px 20px 0", borderBottom:"1px solid #1e293b" }}>
         <div style={{ display:"flex", alignItems:"baseline", gap:12, marginBottom:8 }}>
           <span style={{ fontSize:18, fontWeight:700, letterSpacing:"0.06em", color:"#f1f5f9" }}>{deckName.toUpperCase()}</span>
           <span style={{ fontSize:11, color:"#475569" }}>{cards.reduce((s,c)=>s+c.count,0)} cards ({cards.length} unique)</span>
-          <button onClick={() => { setCards(null); setDeckName(""); setSearch(""); setFilterCat(null); }}
-            style={{ marginLeft:"auto", background:"transparent", color:"#334155", border:"1px solid #1e293b", padding:"2px 10px", borderRadius:4, cursor:"pointer", fontSize:10, fontFamily:"inherit", letterSpacing:"0.06em" }}
-            onMouseEnter={e => e.currentTarget.style.color="#94a3b8"} onMouseLeave={e => e.currentTarget.style.color="#334155"}>
-            ← LOAD NEW DECK
-          </button>
+          {!embedded && (
+            <button onClick={() => onBack?.()}
+              style={{ marginLeft:"auto", background:"transparent", color:"#334155", border:"1px solid #1e293b", padding:"2px 10px", borderRadius:4, cursor:"pointer", fontSize:10, fontFamily:"inherit", letterSpacing:"0.06em" }}
+              onMouseEnter={e => e.currentTarget.style.color="#94a3b8"} onMouseLeave={e => e.currentTarget.style.color="#334155"}>
+              ← LOAD NEW DECK
+            </button>
+          )}
         </div>
 
         {/* Summary bar */}
@@ -637,4 +635,22 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+// ─── Main App ─────────────────────────────────────────────────────────────────
+
+export default function App() {
+  const [screen, setScreen] = useState("load"); // "load" | "deck"
+  const [cards, setCards] = useState(null);
+  const [deckName, setDeckName] = useState("");
+
+  if (screen === "load") {
+    return (
+      <LoadScreen
+        onLoad={(c, name) => { setCards(c); setDeckName(name); setScreen("deck"); }}
+        onCompareMode={() => setScreen("compare-load")}
+      />
+    );
+  }
+  return <DeckTable cards={cards} deckName={deckName} onBack={() => setScreen("load")} />;
 }
