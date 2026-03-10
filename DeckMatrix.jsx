@@ -293,6 +293,113 @@ function BracketFlags({ flags }) {
   );
 }
 
+// ─── Compare Load Screen ──────────────────────────────────────────────────────
+
+function CompareLoadScreen({ onLoad, onBack }) {
+  const [inputA, setInputA] = useState("");
+  const [inputB, setInputB] = useState("");
+  const [errorA, setErrorA] = useState("");
+  const [errorB, setErrorB] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [statusA, setStatusA] = useState("");
+  const [statusB, setStatusB] = useState("");
+
+  const fetchDeck = async (input, setStatus) => {
+    const id = extractDeckId(input);
+    if (!id) throw new Error("Couldn't find a deck ID.");
+    const apiUrl = `https://api.commandersalt.com/decks?id=${id}`;
+    const proxies = [
+      { label: "direct", url: apiUrl },
+      { label: "proxy 1", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(apiUrl)}` },
+      { label: "proxy 2", url: `https://corsproxy.io/?${encodeURIComponent(apiUrl)}` },
+    ];
+    for (const { label, url } of proxies) {
+      try {
+        setStatus(`Trying ${label}…`);
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.json();
+        if (data?.cards) return data;
+      } catch {}
+    }
+    throw new Error("All fetch attempts failed. Try the JSON paste method.");
+  };
+
+  const handleLoad = async () => {
+    setErrorA(""); setErrorB("");
+    let valid = true;
+    if (!inputA.trim()) { setErrorA("Required"); valid = false; }
+    if (!inputB.trim()) { setErrorB("Required"); valid = false; }
+    if (!valid) return;
+    setLoading(true);
+    const [resA, resB] = await Promise.allSettled([
+      fetchDeck(inputA, setStatusA),
+      fetchDeck(inputB, setStatusB),
+    ]);
+    setLoading(false);
+    setStatusA(""); setStatusB("");
+    if (resA.status === "rejected") setErrorA(resA.reason.message);
+    if (resB.status === "rejected") setErrorB(resB.reason.message);
+    if (resA.status === "fulfilled" && resB.status === "fulfilled") {
+      const dataA = resA.value, dataB = resB.value;
+      onLoad(
+        processApiData(dataA), dataA.name || inputA.trim(),
+        processApiData(dataB), dataB.name || inputB.trim(),
+      );
+    }
+  };
+
+  const inputStyle = (err) => ({
+    width: "100%", boxSizing: "border-box", background: "#111318",
+    border: `1px solid ${err ? "#f87171" : "#1e293b"}`, color: "#cbd5e1",
+    padding: "10px 12px", borderRadius: 4, fontSize: 11, fontFamily: "inherit",
+    outline: "none", marginBottom: 6,
+  });
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0d0f14", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Courier New', monospace" }}>
+      <div style={{ width: 520, padding: 40 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "#f1f5f9", letterSpacing: "0.06em", marginBottom: 6 }}>DECK COMPARE</div>
+        <div style={{ height: 2, background: "linear-gradient(90deg,#4ade80,#818cf8,#fb923c,#f472b6)", marginBottom: 24 }} />
+
+        <button onClick={onBack}
+          style={{ background: "transparent", border: "none", color: "#334155", fontSize: 10, fontFamily: "inherit", cursor: "pointer", letterSpacing: "0.06em", marginBottom: 20, padding: 0 }}
+          onMouseEnter={e => e.currentTarget.style.color = "#94a3b8"}
+          onMouseLeave={e => e.currentTarget.style.color = "#334155"}>
+          ← SINGLE DECK MODE
+        </button>
+
+        {[
+          ["A", inputA, setInputA, errorA, setErrorA, statusA],
+          ["B", inputB, setInputB, errorB, setErrorB, statusB],
+        ].map(([label, val, setVal, err, setErr, status]) => (
+          <div key={label} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, color: "#334155", marginBottom: 6, letterSpacing: "0.06em" }}>DECK {label}</div>
+            <input value={val} onChange={e => { setVal(e.target.value); setErr(""); }}
+              onKeyDown={e => e.key === "Enter" && !loading && handleLoad()}
+              placeholder="URL or 32-character deck ID"
+              style={inputStyle(err)} />
+            {err && <div style={{ fontSize: 11, color: "#f87171", marginBottom: 4 }}>{err}</div>}
+            {status && <div style={{ fontSize: 11, color: "#475569" }}>{status}</div>}
+          </div>
+        ))}
+
+        <button onClick={handleLoad} disabled={loading || !inputA.trim() || !inputB.trim()}
+          style={{
+            width: "100%", padding: "10px", borderRadius: 4,
+            cursor: loading || !inputA.trim() || !inputB.trim() ? "not-allowed" : "pointer",
+            background: loading || !inputA.trim() || !inputB.trim() ? "#111318" : "#f1f5f9",
+            color: loading || !inputA.trim() || !inputB.trim() ? "#334155" : "#0d0f14",
+            border: "1px solid #1e293b", fontSize: 11, fontFamily: "inherit",
+            fontWeight: 700, letterSpacing: "0.08em", transition: "all 0.15s",
+          }}>
+          {loading ? "LOADING…" : "COMPARE DECKS"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Load Screen ──────────────────────────────────────────────────────────────
 
 function LoadScreen({ onLoad, onCompareMode }) {
@@ -657,6 +764,7 @@ export default function App() {
   const [screen, setScreen] = useState("load"); // "load" | "deck" | "compare-load" | "compare"
   const [cards, setCards] = useState(null);
   const [deckName, setDeckName] = useState("");
+  const [compareData, setCompareData] = useState(null); // { cardsA, nameA, cardsB, nameB }
 
   if (screen === "load") {
     return (
@@ -665,6 +773,20 @@ export default function App() {
         onCompareMode={() => setScreen("compare-load")}
       />
     );
+  }
+  if (screen === "compare-load") {
+    return (
+      <CompareLoadScreen
+        onLoad={(cA, nA, cB, nB) => {
+          setCompareData({ cardsA: cA, nameA: nA, cardsB: cB, nameB: nB });
+          setScreen("compare");
+        }}
+        onBack={() => setScreen("load")}
+      />
+    );
+  }
+  if (screen === "compare") {
+    return <div style={{ color: "#f1f5f9", padding: 40, fontFamily: "'Courier New', monospace" }}>Compare view coming soon… ({compareData?.nameA} vs {compareData?.nameB})</div>;
   }
   return <DeckTable cards={cards} deckName={deckName} onBack={() => setScreen("load")} />;
 }
