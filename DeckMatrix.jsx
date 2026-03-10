@@ -932,7 +932,16 @@ function SummaryDiff({ cardsA, nameA, cardsB, nameB }) {
 }
 
 function SideBySide({ cardsA, nameA, cardsB, nameB }) {
-  return <div style={{ color: "#475569", fontFamily: "'Courier New', monospace", padding: 20 }}>Side by side coming soon…</div>;
+  return (
+    <div style={{ display: "flex", minHeight: "calc(100vh - 110px)" }}>
+      <div style={{ flex: 1, borderRight: "2px solid #1e293b", overflow: "auto" }}>
+        <DeckTable cards={cardsA} deckName={nameA} onBack={null} embedded />
+      </div>
+      <div style={{ flex: 1, overflow: "auto" }}>
+        <DeckTable cards={cardsB} deckName={nameB} onBack={null} embedded />
+      </div>
+    </div>
+  );
 }
 
 function CompareView({ cardsA, nameA, cardsB, nameB, onBack }) {
