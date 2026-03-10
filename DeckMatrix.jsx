@@ -18,11 +18,12 @@ const SUB_LABELS = {
   wincon_tokens: "tokens", wincon_combat: "combat",
 };
 
+// Fallback sub-lists used only if the API doesn't provide subCategories
 const CAT_SUBS = {
   consistency:   ["tutors", "draw", "recursion", "topdeck", "multipliers"],
   interaction:   ["spotRemoval", "boardWipes", "counters", "stax", "taxes", "graveyard", "evasion", "otherControl", "discard"],
   efficiency:    ["fastmana", "ramp", "costReduction"],
-  winConditions: ["wincon", "combos", "wincon_stompy", "wincon_burn", "wincon_tokens", "wincon_combat"],
+  winConditions: ["wincon", "combos"],
 };
 
 const MANA_CATS = ["landScores", "rockScores", "ritualScores", "landRampScores", "otherScores", "dorkScores", "treasureScores"];
@@ -46,9 +47,13 @@ function processApiData(data) {
   const brackets_cats = data.details.brackets?.categories || {};
   const front_cards = new Set(Object.entries(cards_raw).filter(([, c]) => c.isFrontFace !== false).map(([id]) => id));
 
+  const resolvedCatSubs = Object.fromEntries(
+    Object.keys(CAT_SUBS).map(cat => [cat, pl_scoring[cat]?.subCategories || CAT_SUBS[cat]])
+  );
+
   // Power scores
   const card_scores = {};
-  for (const [bigcat, subs] of Object.entries(CAT_SUBS)) {
+  for (const [bigcat, subs] of Object.entries(resolvedCatSubs)) {
     for (const sub of subs) {
       const subdata = pl_scoring[sub];
       if (!subdata?.list || typeof subdata.list !== "object") continue;
@@ -57,8 +62,9 @@ function processApiData(data) {
         const s = entry_data.score || 0;
         if (s <= 0) continue;
         const targets = entry_data.cards || [entry_data.id || entry_id];
-        for (const card_id of targets) {
-          if (!card_scores[card_id]) card_scores[card_id] = Object.fromEntries(Object.keys(CAT_SUBS).map(c => [c, { score: 0, subs: [] }]));
+        for (const raw_id of targets) {
+          const card_id = cards_raw[raw_id]?.frontFaceId || raw_id;
+          if (!card_scores[card_id]) card_scores[card_id] = Object.fromEntries(Object.keys(resolvedCatSubs).map(c => [c, { score: 0, subs: [] }]));
           card_scores[card_id][bigcat].score += s;
           const entry = { sub, score: Math.round(s * 100) / 100 };
           if (entry_data.cards) entry.combo = entry_id;
@@ -158,6 +164,13 @@ function formatComboLabel(id) {
   return id.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
+function subLabel(sub) {
+  if (SUB_LABELS[sub]) return SUB_LABELS[sub];
+  // e.g. "wincon_groupslug" -> "groupslug"
+  const stripped = sub.startsWith("wincon_") ? sub.slice(7) : sub;
+  return stripped.replace(/_/g, " ");
+}
+
 function ScoreBar({ score, maxScore, catKey }) {
   const c = CAT_CONFIG[catKey];
   const pct = maxScore > 0 ? Math.min(100, (score / maxScore) * 100) : 0;
@@ -182,7 +195,7 @@ function SubTooltip({ subs, catKey }) {
     if (entry.combo) grouped.push({ label: formatComboLabel(entry.combo), score: entry.score, isCombo: true });
     else subTotals[entry.sub] = (subTotals[entry.sub] || 0) + entry.score;
   }
-  for (const [sub, score] of Object.entries(subTotals)) grouped.unshift({ label: SUB_LABELS[sub] || sub, score, isCombo: false });
+  for (const [sub, score] of Object.entries(subTotals)) grouped.unshift({ label: subLabel(sub), score, isCombo: false });
   return (
     <div style={{
       position: "absolute", zIndex: 200, bottom: "calc(100% + 4px)", left: "50%", transform: "translateX(-50%)",
@@ -238,6 +251,34 @@ function ManaBadge({ cat }) {
   const colors = { land:"#86efac", rock:"#fde68a", ritual:"#fca5a5", dork:"#6ee7b7", treasure:"#fcd34d", landRamp:"#a5f3fc", other:"#d1d5db" };
   const color = colors[cat] || "#94a3b8";
   return <div style={{ borderRadius:4, display:"inline-flex", alignItems:"center", justifyContent:"center", background:"#1a1a1a", color, fontWeight:700, fontSize:10, padding:"2px 7px", border:`1.5px solid ${color}` }}>{cat || "—"}</div>;
+}
+
+function TagsCell({ card }) {
+  const tags = [];
+  for (const [catKey, catCfg] of Object.entries(CAT_CONFIG)) {
+    const catData = card.scores[catKey];
+    if (!catData?.subs?.length) continue;
+    const subTotals = {};
+    let hasCombo = false;
+    for (const entry of catData.subs) {
+      if (entry.combo) hasCombo = true;
+      else subTotals[entry.sub] = (subTotals[entry.sub] || 0) + entry.score;
+    }
+    for (const sub of Object.keys(subTotals)) {
+      tags.push({ label: subLabel(sub), color: catCfg.color, bg: catCfg.pill });
+    }
+    if (hasCombo) tags.push({ label: "combo", color: catCfg.color, bg: catCfg.pill });
+  }
+  if (!tags.length) return <span style={{ color: "#1e293b", fontSize: 11 }}>—</span>;
+  return (
+    <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+      {tags.map((tag, i) => (
+        <span key={i} style={{ borderRadius: 3, fontSize: 9, fontWeight: 700, padding: "1px 5px", background: tag.bg, color: tag.color, border: `1px solid ${tag.color}44`, letterSpacing: "0.04em" }}>
+          {tag.label}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function BracketFlags({ flags }) {
@@ -436,6 +477,7 @@ export default function App() {
     { key: "interaction",  label: "INTERACTION",    color: CAT_CONFIG.interaction.color },
     { key: "efficiency",   label: "EFFICIENCY",     color: CAT_CONFIG.efficiency.color },
     { key: "winConditions",label: "WIN CONDITIONS", color: CAT_CONFIG.winConditions.color },
+    { key: "tags",         label: "TAGS",           color: "#64748b" },
     { key: "power_total",  label: "PWR",            color: sortCol === "power_total" ? "#f1f5f9" : "#475569" },
     { key: "synergy",      label: "SYN",            color: "#38bdf8" },
     { key: "bias",         label: "BIAS",           color: "#a78bfa" },
@@ -513,9 +555,9 @@ export default function App() {
       <div style={{ overflowX:"auto" }}>
         <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
           <colgroup>
-            <col style={{width:"13%"}}/><col style={{width:"11%"}}/><col style={{width:"11%"}}/><col style={{width:"11%"}}/>
-            <col style={{width:"11%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/>
-            <col style={{width:"6%"}}/><col style={{width:"6%"}}/><col style={{width:"7%"}}/><col style={{width:"5%"}}/>
+            <col style={{width:"12%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/><col style={{width:"10%"}}/>
+            <col style={{width:"10%"}}/><col style={{width:"14%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/><col style={{width:"5%"}}/>
+            <col style={{width:"5%"}}/><col style={{width:"6%"}}/><col style={{width:"6%"}}/><col style={{width:"5%"}}/>
           </colgroup>
           <thead>
             <tr style={{ background:"#0d0f14", borderBottom:"2px solid #1e293b", position:"sticky", top:0, zIndex:10 }}>
@@ -543,6 +585,9 @@ export default function App() {
                 {["consistency","interaction","efficiency","winConditions"].map(cat => (
                   <ScoreCell key={cat} card={card} catKey={cat} maxScore={maxScores[cat]} />
                 ))}
+                <td style={{ padding:"5px 8px", verticalAlign:"middle", borderRight:"1px solid #1e293b" }}>
+                  <TagsCell card={card} />
+                </td>
                 <td style={{ padding:"6px 8px", textAlign:"center", verticalAlign:"middle", borderRight:"1px solid #1e293b" }}>
                   <Badge n={card.power_total} thresholds={POWER_T} />
                 </td>
@@ -577,6 +622,7 @@ export default function App() {
                   {filtered.reduce((s,c)=>s+(c.scores[cat]?.score||0),0).toFixed(1)}
                 </td>
               ))}
+              <td style={{ borderRight:"1px solid #1e293b" }} />
               {[["power_total","#f1f5f9",1],["synergy","#38bdf8",1],["bias","#a78bfa",2],["manabase","#86efac",0],["grand_total","#fbbf24",1]].map(([key,color,dec]) => (
                 <td key={key} style={{ padding:"8px 10px", textAlign:"center", fontSize:11, fontWeight:700, color, borderRight:"1px solid #1e293b" }}>
                   {filtered.reduce((s,c)=>s+(key==="grand_total"?c.power_total+c.synergy+c.bias+c.manabase:(c[key]||0)),0).toFixed(dec)}
